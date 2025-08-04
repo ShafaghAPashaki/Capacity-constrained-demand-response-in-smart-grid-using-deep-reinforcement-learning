@@ -136,14 +136,14 @@ def train_dqn(rho=None, eval_interval=100, max_episodes=None, house_ids=None):
         reward_history: list of total reward per episode
         q_trace: list of average max‐Q over fixed reference states every eval_interval
     """
-    # 1. Load config and apply rho/house_ids overrides
+    # Load config and apply rho/house_ids overrides
     cfg = load_config()
     if rho is not None:
         cfg['environment']['rho'] = rho
     if house_ids is not None:
         cfg['environment']['house_ids'] = house_ids
 
-    # 2. Initialize environment and agent
+    # Initialize environment and agent
     house_ids = cfg['environment']['house_ids']
     env = Environment(house_ids, cfg_override=cfg)
     first_state = env.reset()
@@ -152,17 +152,17 @@ def train_dqn(rho=None, eval_interval=100, max_episodes=None, house_ids=None):
 
     agent = DQNAgent(state_dim, action_dim, cfg_override=cfg)
 
-    # 3. Prepare fixed states for Q‐trace evaluation
+    # Prepare fixed states for Q‐trace evaluation
     fixed_states = [env.reset() for _ in range(10)]
     q_trace = []
     reward_history = []
 
-    # 4. Determine number of episodes
+    # Determine number of episodes
     if max_episodes is None:
         max_episodes = cfg['DQN']['episodes']
     print_interval = max(1, max_episodes // 10)
 
-    # 5. Training loop
+    # Training loop
     for ep in range(1, max_episodes + 1):
         state = env.reset()
         total_reward = 0.0
@@ -187,14 +187,14 @@ def train_dqn(rho=None, eval_interval=100, max_episodes=None, house_ids=None):
                     qs.append(q_val)
             q_trace.append(sum(qs) / len(qs))
 
-        # 7. Progress printout
+        # Progress printout
         if ep % print_interval == 0:
             avg_loss = np.mean(agent.losses) if agent.losses else 0.0
             agent.losses = []
             print(f"[ρ={rho}] Ep {ep}/{max_episodes} | R:{total_reward:.2f} | "
                   f"ε:{agent.epsilon:.3f} | Loss:{avg_loss:.4f}")
 
-    # 8. Save model with rho in filename
+    # Save model with rho in filename
     model_name = f"dqn_model_rho{rho}.pth" if rho is not None else "dqn_model.pth"
     agent.save(model_name)
     print(f"Model saved → {model_name}")
@@ -232,3 +232,4 @@ if __name__ == "__main__":
 
       
       
+
