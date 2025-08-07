@@ -15,14 +15,7 @@ from utils.config_loader import load_config
 from utils.load_demand import load_demand  
 
 # Plot style parameters
-plt.rcParams.update({
-    'font.size': 18,
-    'axes.labelsize': 20,
-    'xtick.labelsize': 16,
-    'ytick.labelsize': 16,
-    'legend.fontsize': 16,
-    'legend.title_fontsize': 18
-})
+plt.rcParams.update({'font.size': 18, 'axes.labelsize': 20,'xtick.labelsize': 16, 'ytick.labelsize': 16, 'legend.fontsize': 16, 'legend.title_fontsize': 18})
 
 class LoadDataset(Dataset):
     def __init__(self, df: pd.DataFrame, features: list, window: int):
@@ -197,3 +190,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
