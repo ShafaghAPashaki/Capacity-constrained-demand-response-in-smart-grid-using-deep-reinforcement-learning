@@ -35,7 +35,7 @@ DQN:
   epsilon_start: 1.0
   epsilon_min: 0.05
   epsilon_decay: 0.998
-  episodes: 2000
+  episodes: 800
   BUFFER_SIZE: 50000             
   BATCH_SIZE: 64                 
   LEARNING_RATE_DQN: 0.0001      
@@ -54,11 +54,12 @@ training:
   batch_size: 64
   lr: 0.001
   n_epochs: 1000
+  
 
 forecast:
   window_size: 24        
-  horizon: 24             
-  hidden_size: 64        
+  horizon: 24            
+  hidden_size: 128        
   num_layers: 2          
   dropout: 0.2           
 
