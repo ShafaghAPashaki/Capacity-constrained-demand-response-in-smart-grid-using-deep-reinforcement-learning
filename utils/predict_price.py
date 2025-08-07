@@ -14,14 +14,7 @@ from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from utils.config_loader import load_config
 from utils.load_price import load_price
 
-plt.rcParams.update({
-    'font.size': 18,
-    'axes.labelsize': 20,
-    'xtick.labelsize': 16,
-    'ytick.labelsize': 16,
-    'legend.fontsize': 16,
-    'legend.title_fontsize': 18
-})
+plt.rcParams.update({'font.size': 18, 'axes.labelsize': 20, 'xtick.labelsize': 16, 'ytick.labelsize': 16, 'legend.fontsize': 16, 'legend.title_fontsize': 18})
 
 class PriceDataset(Dataset):
     def __init__(self, df: pd.DataFrame, features: list, window: int):
@@ -71,10 +64,7 @@ def main():
         df[f'lag{lag}'] = df['price_log'].shift(lag)
     df.dropna(inplace=True)
 
-    features = [
-        'month', 'dayofweek', 'hour',
-        'is_weekend', 'is_holiday'
-    ] + [f'lag{lag}' for lag in [1, 2, 3, 24, 25, 26, 48, 49, 50]]
+    features = ['month', 'dayofweek', 'hour','is_weekend', 'is_holiday'] + [f'lag{lag}' for lag in [1, 2, 3, 24, 25, 26, 48, 49, 50]]
     scaler = MinMaxScaler()
     df[features] = scaler.fit_transform(df[features])
     df['doy'] = df['dt'].dt.dayofyear
@@ -96,12 +86,7 @@ def main():
     val_loader = DataLoader(val_ds, batch_size=bs)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = GRUForecaster(
-        in_size=len(features),
-        hidden_size=cfg['forecast']['hidden_size'],
-        num_layers=cfg['forecast']['num_layers'],
-        dropout=cfg['forecast']['dropout']
-    ).to(device)
+    model = GRUForecaster(in_size=len(features), hidden_size=cfg['forecast']['hidden_size'], num_layers=cfg['forecast']['num_layers'], dropout=cfg['forecast']['dropout']).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=cfg['training']['lr'])
     criterion = nn.SmoothL1Loss()
@@ -163,11 +148,7 @@ def main():
     actuals_array = np.vstack(all_actuals)
 
     pred_times = val_df['dt'].iloc[window:].reset_index(drop=True)
-    df_pred = pd.DataFrame({
-        'dt': pred_times,
-        'real': actuals_array[:, 0],
-        'forecast': preds_array[:, 0]
-    })
+    df_pred = pd.DataFrame({'dt': pred_times, 'real': actuals_array[:, 0], 'forecast': preds_array[:, 0]})
 
     df_pred[['real', 'forecast']] = df_pred[['real', 'forecast']].clip(upper=80)
 
@@ -210,3 +191,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
