@@ -14,17 +14,15 @@ environment:
     off_peak: 0.5
     mid_peak: 0.3
     on_peak: 0.1
-  capacity_threshold: 8.5
+  capacity_threshold: 8
   max_reduction_fraction : 0.3 # up to 30% cap normally
   mu:
     - 0.8
-    - 0.5
-    - 0.3
+    - 0.6
+    - 0.4
   omega : 0.1
   rho: 0.9
   customer_reward_weight: 0.5
-  lam_frac_min: 0.3
-  lam_frac_max: 0.8
   # Device params
   DEVICES: ['air', 'car', 'clotheswasher', 'dishwasher', 'dry']
   DEVICE_CONSUMPTION: [2.5, 4.0, 1.0, 2.0, 2.0]
@@ -38,8 +36,8 @@ DQN:
   gamma: 0.99 
   epsilon_start: 1
   epsilon_min: 0.01
-  epsilon_decay: 0.998 
-  episodes: 1500
+  epsilon_decay: 0.998
+  episodes: 3000
   BUFFER_SIZE: 50000            
   BATCH_SIZE: 256               
   LEARNING_RATE_DQN: 0.0001      
