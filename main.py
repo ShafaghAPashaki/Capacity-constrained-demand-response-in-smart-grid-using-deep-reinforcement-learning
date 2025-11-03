@@ -221,57 +221,42 @@ class DQNTrainer:
     def plot_training_curves(self):
         """Plot and save training curves"""
         try:
-            window_size = 50  
-            
-            # Reward curve
-            if self.episode_rewards and len(self.episode_rewards) >= window_size:
-                rewards = np.array(self.episode_rewards)
-                reward_moving_avg = np.convolve(rewards, np.ones(window_size)/window_size, mode='valid')
-                x_axis = np.arange(window_size, len(reward_moving_avg) + window_size)
-                
+            if self.episode_rewards:
                 plt.figure(figsize=(12, 8))
-                plt.plot(x_axis, reward_moving_avg, color='blue', linewidth=2.0)
+                plt.plot(self.episode_rewards, color='blue', linewidth=2.0)
                 plt.title('Training Reward', fontsize=18)
                 plt.xlabel('Training Episode', fontsize=18)
-                plt.ylabel('Average Reward', fontsize=18)
+                plt.ylabel('Reward', fontsize=18)
                 plt.tight_layout()
                 plt.savefig(os.path.join(self.results_dir, 'episode_reward.png'), dpi=300, bbox_inches='tight')
                 plt.close()
                 print(f"Figure 'Training Reward' plotted and saved successfully")
 
-            # Loss curve
-            if self.episode_losses and len(self.episode_losses) >= window_size:
-                losses = np.array(self.episode_losses)
-                loss_moving_avg = np.convolve(losses, np.ones(window_size)/window_size, mode='valid')
-                x_axis = np.arange(window_size, len(loss_moving_avg) + window_size)
-                
+            # Loss curve 
+            if self.episode_losses:
                 plt.figure(figsize=(12, 8))
-                plt.plot(x_axis, loss_moving_avg, color='red', linewidth=2.0)
+                plt.plot(self.episode_losses, color='red', linewidth=2.0)
                 plt.title('Training Loss', fontsize=18)
                 plt.xlabel('Training Episode', fontsize=18)
-                plt.ylabel('Average Loss', fontsize=18)
+                plt.ylabel('Loss', fontsize=18)
                 plt.tight_layout()
                 plt.savefig(os.path.join(self.results_dir, 'training_loss.png'), dpi=300, bbox_inches='tight')
                 plt.close()
                 print(f"Figure 'Training Loss' plotted and saved successfully")
 
-            # Q-values curve
-            if self.episode_q_values and len(self.episode_q_values) >= window_size:
-                q_vals = np.array(self.episode_q_values)
-                q_moving_avg = np.convolve(q_vals, np.ones(window_size)/window_size, mode='valid')
-                x_axis = np.arange(window_size, len(q_moving_avg) + window_size)
-                
+            # Q-values curve 
+            if self.episode_q_values:
                 plt.figure(figsize=(12, 8))
-                plt.plot(x_axis, q_moving_avg, color='green', linewidth=2.0)
+                plt.plot(self.episode_q_values, color='green', linewidth=2.0)
                 plt.title('Q-values', fontsize=18)
                 plt.xlabel('Training Episode', fontsize=18)
-                plt.ylabel('Average Q-value', fontsize=18)
+                plt.ylabel('Q-value', fontsize=18)
                 plt.tight_layout()
                 plt.savefig(os.path.join(self.results_dir, 'q_values.png'), dpi=300, bbox_inches='tight')
                 plt.close()
                 print(f"Figure 'Q-values' plotted and saved successfully")
 
-            # Epsilon decay curve
+            # Epsilon decay curve 
             if self.epsilon_history:
                 epsilon_hist = np.array(self.epsilon_history)
                 plt.figure(figsize=(12, 8))
@@ -284,7 +269,7 @@ class DQNTrainer:
                 plt.close()
                 print(f"Figure 'Epsilon Decay' plotted and saved successfully")
 
-            # Evaluation curve
+            # Evaluation curve 
             if self.eval_rewards and self.eval_timesteps:
                 plt.figure(figsize=(12, 8))
                 plt.plot(self.eval_timesteps, self.eval_rewards, 'o-', color='darkorange', 
@@ -298,15 +283,10 @@ class DQNTrainer:
                 print(f"Figure 'Policy Evaluation' plotted and saved successfully")
 
             # Training vs Validation comparison
-            if self.eval_rewards and self.eval_timesteps and len(self.episode_rewards) >= window_size:
+            if self.eval_rewards and self.eval_timesteps and self.episode_rewards:
                 plt.figure(figsize=(12, 8))
                 
-                train_rewards = np.array(self.episode_rewards)
-                train_moving_avg = np.convolve(train_rewards, np.ones(window_size)/window_size, mode='valid')
-                train_episodes = np.arange(window_size, len(train_moving_avg) + window_size)
-                
-                plt.plot(train_episodes, train_moving_avg, 'b-', linewidth=2.5, 
-                        label='Training Reward')
+                plt.plot(self.episode_rewards, 'b-', linewidth=1.0, alpha=0.7, label='Training Reward')
                 
                 # Validation
                 plt.plot(self.eval_timesteps, self.eval_rewards, 'ro-', linewidth=3.0, markersize=8, 
@@ -314,14 +294,13 @@ class DQNTrainer:
                 
                 plt.title('Training vs Validation Performance', fontsize=18)
                 plt.xlabel('Training Episode', fontsize=18)
-                plt.ylabel('Average Reward', fontsize=18)
+                plt.ylabel('Reward', fontsize=18)
                 plt.legend(fontsize=12)
                 plt.tight_layout()
                 plt.savefig(os.path.join(self.results_dir, 'train_vs_validation.png'), dpi=300, bbox_inches='tight')
                 plt.close()
                 print(f"Figure 'Training vs Validation Performance' plotted and saved successfully")
                 
-            
         except Exception as e:
             print(f"Error plotting training curves: {e}")
 
