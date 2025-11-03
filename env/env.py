@@ -47,16 +47,20 @@ class Environment:
         self.omega = self.cfg['environment']['omega']
         self.capacity_threshold = self.cfg['environment']['capacity_threshold']
         self.max_reduction_fraction = self.cfg['environment']['max_reduction_fraction']
-        self.lam_frac_min = self.cfg['environment']['lam_frac_min']
-        self.lam_frac_max = self.cfg['environment']['lam_frac_max']
 
         # discrete action space
-        self.discrete_actions = np.linspace(0.0, 1.0, 4)
-        self.all_actions = np.array(list(itertools.product(self.discrete_actions, repeat=self.N))) #4^3 = 64 actions for N=3
+        self.discrete_actions = np.linspace(0.0, 1.0, 5)
+        self.all_actions = np.array(list(itertools.product(self.discrete_actions, repeat=self.N))) #5^3 = 125 actions for N=3
         self.num_actions = len(self.all_actions)
 
         # US holidays (2018)
         self.us_holidays = holidays.US(years=[2018])
+
+        # Device parameters 
+        self.DEVICES = self.cfg['environment']['DEVICES']
+        self.DEVICE_CONSUMPTION = np.array(self.cfg['environment']['DEVICE_CONSUMPTION'])
+        self.DISSATISFACTION_COEFFICIENTS = np.array(self.cfg['environment']['DISSATISFACTION_COEFFICIENTS'])
+        self.DEVICE_NON_INTERRUPTIBLE = np.array(self.cfg['environment']['DEVICE_NON_INTERRUPTIBLE'])
 
     def reset(self, day=None, mode = 'train'):
         # day selection based on mode
@@ -146,6 +150,8 @@ class Environment:
     def get_state(self):
         # get current step data
         h, baselines, _, price, delta_E = self.get_step_data()
+
+        # compute log-scaled price for state representation
         upper_clip = 80.0
         price_for_state = np.log1p(np.clip(price, 0.0, upper_clip))
 
@@ -156,22 +162,31 @@ class Environment:
         Holiday_flag = self.is_holiday
         Weekend_flag = self.is_weekend
 
+        # compute needed reduction
+        total_baseline = baselines.sum()
+        needed = max(0.0, total_baseline - self.capacity_threshold)
+        need_flag = 1.0 if needed > 0 else 0.0
+        needed_normalized = needed / self.capacity_threshold if self.capacity_threshold > 0 else 0.0
+
         # create state vector
-        inputs = [delta_E, baselines, [price_for_state], [h / (self.max_steps - 1)], [total_baseline], [Holiday_flag], [Weekend_flag]]
+        inputs = [delta_E, baselines, [price_for_state], [h / (self.max_steps - 1)], [total_baseline], [Holiday_flag], [Weekend_flag], [need_flag], [needed_normalized]]
         return np.concatenate([np.atleast_1d(p) for p in inputs]).astype(float)
 
     def apply_incentives(self, raw_action):
         h = self.curr_step
-        if self.total_baseline[h] <= self.capacity_threshold:
-            incentives = np.zeros(self.N)  # zero incentives below threshold
-        else:
-            # only apply incentives when above threshold
-            incentives = self.lam_min[h] + raw_action * (self.lam_max[h] - self.lam_min[h])
+        incentives = self.lam_min[h] + raw_action * (self.lam_max[h] - self.lam_min[h])
         self.incentives[self.curr_step] = incentives
         return incentives
 
     def compute_service_provider_reward(self):
-        h, _, lambdas, price, delta_E = self.get_step_data()
+        h, baselines, lambdas, price, delta_E = self.get_step_data()
+
+        total_baseline = baselines.sum()
+        needed_reduction = max(0.0, total_baseline - self.capacity_threshold)
+        
+        unnecessary_incentive_penalty = 0.0
+        if needed_reduction <= 0 and np.any(lambdas > 0):
+            unnecessary_incentive_penalty = -np.sum(lambdas) * 5.0  
 
         # market revenue and cost
         revenue = price * delta_E.sum()
@@ -185,18 +200,20 @@ class Environment:
         #    discomfort[i] = lambdas[i] * phi  
         #cost = discomfort.sum()
 
-        self.rewards_service_provider[h] = revenue - cost
+        self.rewards_service_provider[h] = revenue - cost + unnecessary_incentive_penalty 
         return self.rewards_service_provider[h]
 
     def compute_customers_reward(self):
         h, _, lambdas, _, delta_E = self.get_step_data()
+
         rewards = np.zeros(len(self.data_ids))
         for i in range(len(self.data_ids)):
             delta_i = delta_E[i]  
             discomfort = self.mu[i] * delta_i**2 / 2 + self.omega * delta_i
             benefit = self.rho * lambdas[i] * delta_i
-            #benefit = self.rho * lambdas[i] * discomfort
-            rewards[i] = benefit - (1 - self.rho) * discomfort
+        
+            rewards[i] = benefit - (1 - self.rho) * discomfort 
+    
         self.rewards_customers[h] = rewards
         return rewards.sum()
 
@@ -205,11 +222,26 @@ class Environment:
         sp_reward = self.rewards_service_provider[h]
         cu_reward = self.rewards_customers[h].sum()
         total_reward = self.weight * sp_reward + (1 - self.weight) * cu_reward 
+
+        total_baseline = self.total_baseline[h]
+        needed_reduction = max(0.0, total_baseline - self.capacity_threshold)
+
+        no_incentive_bonus = 0.0
+        if needed_reduction <= 0 and np.all(self.incentives[h] == 0):
+           no_incentive_bonus = 5.0  
+    
+        unnecessary_incentive_penalty = 0.0
+        if needed_reduction <= 0 and np.any(self.incentives[h] > 0):
+           unnecessary_incentive_penalty = -5.0 
+
+        no_action_penalty = 0.0
+        if needed_reduction > 0 and np.all(self.incentives[h] == 0):
+            # Calculate how much reduction was actually needed
+            actual_reduction = self.compute_total_reduction(h)
+            missing_reduction = max(0, needed_reduction - actual_reduction)
+            no_action_penalty = -missing_reduction * 10.0  # Heavy penalty per missing kWh 
        
-        # Grid Stability baseline
-        stable = 1.0 if self.total_baseline[h] <= self.capacity_threshold else 0.0
-        b = 0.005  # bonus for stability
-        total_reward += b * stable
+        total_reward += no_incentive_bonus + unnecessary_incentive_penalty + no_action_penalty
         self.rewards_total[h] = total_reward
         return total_reward
     
@@ -232,43 +264,31 @@ class Environment:
         return baseline_total - reduction
 
     def get_lam_bounds(self):
-        # per-hour dynamic bounds
-        lam_min = self.lam_frac_min * self.prices
-        lam_max = self.lam_frac_max * self.prices
-        
-        # ensure min <= max
-        np.putmask(lam_min, lam_min > lam_max, 0.95 * lam_max)
+
+        lam_min = np.zeros_like(self.prices, dtype=float)  
+        lam_max = 0.95*self.prices
+
         return lam_min, lam_max
 
     def compute_delta_E(self, baselines, incentives, h):
-        # amount we need to cut to hit the static threshold
-        total_baseline = baselines.sum()
-        needed = max(0.0, total_baseline - self.capacity_threshold)
-        
-        if needed <= 0:
-            return np.zeros(self.N)  # no reduction needed
-        
-        # compute each house's max reduction cap 
-        max_red = self.max_reduction_fraction * baselines
-        
-        # build net cost = - incentive signal
-        net_cost = -incentives
-        
-        # greedy continuous knapsack: allocate reductions where net_cost is lowest
-        delta = np.zeros(self.N)
-        rem = needed
-        
-        for i in np.argsort(net_cost):
-            if rem <= 0:
-                break
-            avail = max_red[i]
-            take = min(avail, rem)
-            if take > 0:
-                delta[i] = take
-                rem -= take
-        
-        # clip to each house's cap
-        return np.minimum(delta, max_red)
+        # Compute delta_E for each house based on their response to incentives
+        delta_E = np.zeros(self.N)
+        for i in range(self.N):
+            lambda_i = incentives[i]
+            # Calculate the optimal reduction for the customer without constraints
+            numerator = self.rho * lambda_i - (1 - self.rho) * self.omega
+            denominator = (1 - self.rho) * self.mu[i]
+            if denominator <= 0:
+                delta_i_star = 0.0
+            else:
+                delta_i_star = numerator / denominator
+            # delta_i_star could be negative, so clamp at 0
+            delta_i_star = max(0.0, delta_i_star)
+            # Also, cap by the maximum reduction fraction of baseline
+            max_red_i = self.max_reduction_fraction * baselines[i]
+            delta_E[i] = min(delta_i_star, max_red_i)
+            
+        return delta_E
 
     def get_step_data(self, step=None):
         h = step if step is not None else self.curr_step
@@ -277,3 +297,4 @@ class Environment:
         price = self.prices[h]
         delta_E = self.compute_delta_E(baselines, lambdas, h)
         return h, baselines, lambdas, price, delta_E
+    
