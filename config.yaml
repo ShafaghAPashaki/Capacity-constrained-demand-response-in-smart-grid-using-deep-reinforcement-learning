@@ -2,11 +2,12 @@ general:
   load_file: "data/load_hourly_2018.csv"
   price_file: "data/ercot_hourly_price.csv"
 
+
 environment:
   house_ids:
-    - 4031
-    - 7800
-    - 8156
+    - 661
+    - 3039
+    - 8565
   off_peak_hours: [0, 1, 2, 3, 4, 5, 6, 22, 23]
   mid_peak_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
   on_peak_hours: [17, 18, 19, 20, 21]
@@ -14,22 +15,32 @@ environment:
     off_peak: 0.5
     mid_peak: 0.3
     on_peak: 0.1
-  capacity_threshold: 8
-  max_reduction_fraction : 0.3 # up to 30% cap normally
+  capacity_threshold: 7
   mu:
-    - 0.8
+    - 0.3
     - 0.6
-    - 0.4
+    - 0.9
   omega : 0.1
   rho: 0.9
   customer_reward_weight: 0.5
+  max_reduction_fraction: 0.3
+
   # Device params
   DEVICES: ['air', 'car', 'clotheswasher', 'dishwasher', 'dry']
   DEVICE_CONSUMPTION: [2.5, 4.0, 1.0, 2.0, 2.0]
-  DISSATISFACTION_COEFFICIENTS: [6.0, 0.05, 0.2, 0.1, 0.4]
-  DISSATISFACTION_COEFFICIENTS_STD: [2.0, 0.1, 0.1, 0.1, 0.2]
+  DISSATISFACTION_COEFFICIENTS: [3.5, 0.05, 0.4, 0.2, 0.1]
+  DISSATISFACTION_COEFFICIENTS_STD: [2.0, 0.1, 0.1, 0.1, 0.1]
   DISSATISFACTION_COEFFICIENTS_MIN: [1.0, 0.01, 0.01, 0.01, 0.01]
-  DEVICE_NON_INTERRUPTIBLE: [false, false, true, true, true]
+  DEVICE_NON_INTERRUPTIBLE: [false, False, true, true, true]
+  POWER_RATE: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+  ts_deadline_hour:
+    air: 23
+    car: 23
+    clotheswasher: 23
+    dishwasher: 23
+    dry: 23
+  DISABLE_PC: false
+
 
 DQN:
   max_steps: 24
@@ -37,7 +48,7 @@ DQN:
   epsilon_start: 1
   epsilon_min: 0.01
   epsilon_decay: 0.998
-  episodes: 3000
+  episodes: 2500
   BUFFER_SIZE: 50000            
   BATCH_SIZE: 256               
   LEARNING_RATE_DQN: 0.0001      
@@ -48,24 +59,26 @@ DQN:
   eval_episodes: 10      
   eval_epsilon: 0.01          
 
+
 training:
-  train_ranges: [[91,181],[213,273]]   
-  val_range: [182,195]                 
-  test_range: [196,212]                
+  train_ranges: [[91,181],[213,273]]
+  val_range: [182,195]
+  test_range: [196,212]
   time_steps_train: 24                 
   time_steps_test: 24
   batch_size: 64
   lr: 0.001
-  n_epochs: 250
-  patience: 50
+  n_epochs: 200
+  patience: 40
   weight_decay: 1e-5
   verbose: true   
   log_every: 10 
 
+
 forecast:
-  window_size: 72        
+  window_size: 24        
   horizon: 1            
-  hidden_size: 128         
+  hidden_size: 64        
   num_layers: 2        
   dropout: 0.2                
 
