@@ -24,7 +24,6 @@ BIN_SIZE = 2
 
 class ModelTester:
     def __init__(self, model_path, cfg_override=None):
-        """Initialize ModelTester with trained model"""
         self.cfg = cfg_override or load_config()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
@@ -52,7 +51,6 @@ class ModelTester:
 
 
     def load_model(self, model_path):
-        """Load trained model weights"""
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
             
@@ -130,12 +128,12 @@ class ModelTester:
 
 
     def plot_aggregated_load(self, baselines_per_house, after_total_dict, day, rho, output_path=None):
-        agg_baseline = baselines_per_house[day].sum(axis=1)   # (H,)
+        agg_baseline = baselines_per_house[day].sum(axis=1) # (H,)
         agg_after = after_total_dict[day].sum(axis=1) # (H,)
 
         hours = np.arange(1, len(agg_baseline) + 1)
         xticks = np.arange(1, len(agg_baseline) + 1, BIN_SIZE)
-        target_level = 7  # kWh
+        target_level = 7 # kWh
 
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.plot(hours, agg_baseline, marker='o', color='red', linewidth=2, markersize=6, label='Aggregated Original Load')
@@ -204,8 +202,8 @@ class ModelTester:
             for d in range(D):
                 name = device_names[d] if d < len(device_names) else f"dev{d}"
                 fig, ax = plt.subplots(figsize=(10, 6))
-                ax.plot(hours, base_hd[:, d], color='#D62728', linestyle='-',  linewidth=2.4, label=f'{name} (baseline)', zorder=2)
-                ax.plot(hours, after_hd[:, d], color='#1F77B4', linestyle='--', linewidth=3.0, label=f'{name} (after)',     zorder=3)
+                ax.plot(hours, base_hd[:, d], color='#D62728', linestyle='-', linewidth=2.4, label=f'{name} (baseline)', zorder=2)
+                ax.plot(hours, after_hd[:, d], color='#1F77B4', linestyle='--', linewidth=3.0, label=f'{name} (after)', zorder=3)
 
                 ax.set_xlabel('Hour')
                 ax.set_ylabel('Energy (kWh)')
@@ -623,4 +621,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
