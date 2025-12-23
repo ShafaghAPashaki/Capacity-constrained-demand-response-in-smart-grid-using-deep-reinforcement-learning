@@ -11,9 +11,7 @@ from utils.config_loader import load_config
 from load_demand import load_demand
 
 
-# ----------------------------------------------------
-# Reproducibility
-# ----------------------------------------------------
+# reproducibility
 def set_seed(seed: int = 42):
     """Fix random seeds for reproducibility."""
     random.seed(seed)
@@ -23,16 +21,9 @@ def set_seed(seed: int = 42):
         torch.cuda.manual_seed_all(seed)
 
 
-# ----------------------------------------------------
-# Sequence dataset for LSTM
-# ----------------------------------------------------
+# sequence dataset for LSTM
 class SequenceDataset(Dataset):
-    """
-    PyTorch Dataset for sequence-to-one forecasting.
-
-    X: shape (N, seq_len, input_size)
-    y: shape (N, 1)
-    """
+    """PyTorch Dataset for sequence-to-one forecasting."""
     def __init__(self, X: np.ndarray, y: np.ndarray):
         self.X = torch.from_numpy(X).float()
         self.y = torch.from_numpy(y).float()
@@ -44,66 +35,24 @@ class SequenceDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
-# ----------------------------------------------------
 # LSTM forecaster
-# ----------------------------------------------------
 class LSTMForecaster(nn.Module):
-    """
-    A lightweight LSTM-based model for one-step-ahead load forecasting.
-    It takes a sequence of past loads (and optional extra features)
-    and outputs the next-hour load.
-    """
-    def __init__(self, input_size: int, hidden_size: int,
-                 num_layers: int, dropout: float):
+    """A LSTM-based model for one-step-ahead load forecasting. It takes a sequence of past loads and outputs the next-hour load."""
+    def __init__(self, input_size: int, hidden_size: int, num_layers: int, dropout: float):
         super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0,
-        )
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
         self.fc = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
-        """
-        x: (batch, seq_len, input_size)
-        """
-        out, (h_n, c_n) = self.lstm(x)       # out: (batch, seq_len, hidden)
-        last_hidden = out[:, -1, :]          # (batch, hidden)
-        y = self.fc(last_hidden)             # (batch, 1)
+        """x: (batch, seq_len, input_size)"""
+        out, (h_n, c_n) = self.lstm(x) # out: (batch, seq_len, hidden)
+        last_hidden = out[:, -1, :] # (batch, hidden)
+        y = self.fc(last_hidden) # (batch, 1)
         return y
 
 
-# ----------------------------------------------------
-# Build LSTM sequences from raw demand data
-# ----------------------------------------------------
+# build LSTM sequences from raw demand data
 def build_lstm_sequences(df: pd.DataFrame, cfg):
-    """
-    Build sequences for one-step-ahead load forecasting using an LSTM.
-
-    For each house and each time step, we create:
-      - an input sequence of length `seq_len`, where each time step has
-        14 features:
-
-          (0) total load at that hour                [REAL feature]
-          (1) month of year (1–12)                   [cover]
-          (2) ISO week of year (1–53)                [cover]
-          (3) day of month (1–31)                    [cover]
-          (4) hour of day (0–23)                     [cover]
-          (5) is_holiday (0/1, currently always 0)   [cover]
-          (6) is_weekend (0/1)                       [cover]
-          (7–13) dummy features = 0.0                [cover]
-
-      - the target: total load `horizon` hours ahead of the LAST time step
-        in the sequence.
-
-    IMPORTANT:
-      Later, in the normalization function, we explicitly zero-out all
-      features except index 0. So calendar features and dummies are
-      present in the tensor (input_size = 14), but they have NO effect
-      on the model.
-    """
     house_ids = cfg["environment"]["house_ids"]
     horizon = cfg["forecast"]["horizon"]
 
@@ -125,7 +74,7 @@ def build_lstm_sequences(df: pd.DataFrame, cfg):
             continue
 
         values = sub["total"].values.astype(float)
-        times = sub["dt"].values  # datetime64 or Timestamps
+        times = sub["dt"].values  
 
         T = len(sub)
         min_index = seq_len - 1
@@ -149,29 +98,20 @@ def build_lstm_sequences(df: pd.DataFrame, cfg):
                 load_val = values[t_idx]
 
                 # calendar “cover” features
-                month = t_time.month                           # 1–12
-                iso_week = t_time.isocalendar().week          # 1–53
-                day_of_month = t_time.day                     # 1–31
-                hour_of_day = t_time.hour                     # 0–23
-                is_holiday = 0                                # no holiday calendar
+                month = t_time.month                           
+                iso_week = t_time.isocalendar().week          
+                day_of_month = t_time.day                     
+                hour_of_day = t_time.hour                     
+                is_holiday = 0                                
                 is_weekend = 1 if t_time.weekday() >= 5 else 0
 
-                # 7 dummy zeros to reach 14 features in total
                 dummy = [0.0] * 7
 
-                feat_vec = [
-                    load_val,
-                    month,
-                    iso_week,
-                    day_of_month,
-                    hour_of_day,
-                    is_holiday,
-                    is_weekend,
-                ] + dummy   # length 14
+                feat_vec = [load_val, month, iso_week, day_of_month, hour_of_day, is_holiday, is_weekend] + dummy   # length 14
 
                 seq_feats.append(feat_vec)
 
-            seq_feats = np.array(seq_feats, dtype=float)      # (seq_len, 14)
+            seq_feats = np.array(seq_feats, dtype=float) # (seq_len, 14)
 
             t_target = pd.Timestamp(times[target_idx])
             doy = t_target.timetuple().tm_yday
@@ -182,14 +122,10 @@ def build_lstm_sequences(df: pd.DataFrame, cfg):
             ts_list.append(t_target)
             house_list.append(hid)
 
-    X = np.array(X_list)                      # (N, seq_len, 14)
-    y = np.array(y_list)[:, None]             # (N, 1)
+    X = np.array(X_list) # (N, seq_len, 14)
+    y = np.array(y_list)[:, None] # (N, 1)
 
-    meta = {
-        "doy": np.array(doy_list),
-        "timestamp": np.array(ts_list),
-        "house_id": np.array(house_list),
-    }
+    meta = {"doy": np.array(doy_list), "timestamp": np.array(ts_list), "house_id": np.array(house_list)}
 
     print("LSTM load sequences (14-D cover features) built.")
     print("X shape:", X.shape, "y shape:", y.shape)
@@ -197,14 +133,8 @@ def build_lstm_sequences(df: pd.DataFrame, cfg):
     return X, y, meta
 
 
-# ----------------------------------------------------
-# Train/val/test split and normalization for sequences
-# ----------------------------------------------------
+# train/val/test split and normalization for sequences
 def split_and_scale_sequences(X, y, meta, cfg):
-    """
-    Split sequence data into train/val/test using DOY ranges,
-    and normalize X (feature-wise over all time steps) and y.
-    """
     tr_cfg = cfg["training"]
     train_ranges = tr_cfg["train_ranges"]
     val_range = tr_cfg["val_range"]
@@ -227,8 +157,8 @@ def split_and_scale_sequences(X, y, meta, cfg):
     X_val, y_val = X[val_idx], y[val_idx]
     X_test, y_test = X[test_idx], y[test_idx]
 
-    # Feature-wise normalization for X
-    # We flatten over samples and time steps, but keep the last dimension
+    # feature-wise normalization for X
+    # we flatten over samples and time steps, but keep the last dimension
     # as "channels" (here we only have 1 channel: total load).
     X_mean = X_train.mean(axis=(0, 1), keepdims=True)  # shape (1,1,input_size)
     X_std = X_train.std(axis=(0, 1), keepdims=True)
@@ -238,18 +168,12 @@ def split_and_scale_sequences(X, y, meta, cfg):
     X_val_n = (X_val - X_mean) / X_std
     X_test_n = (X_test - X_mean) / X_std
 
-    # ------------------------------------------------
-    # IMPORTANT:
-    # Zero-out all “cover” features so that only
-    # channel 0 (total load) actually influences
-    # the model. We still keep input_size = 14.
-    # ------------------------------------------------
     if X_train_n.shape[2] > 1:
         X_train_n[..., 1:] = 0.0
         X_val_n[..., 1:] = 0.0
         X_test_n[..., 1:] = 0.0
 
-    # Scalar normalization for y
+    # scalar normalization for y
     y_mean = y_train.mean()
     y_std = y_train.std()
     if y_std == 0.0:
@@ -259,19 +183,10 @@ def split_and_scale_sequences(X, y, meta, cfg):
     y_val_n = (y_val - y_mean) / y_std
     y_test_n = (y_test - y_mean) / y_std
 
-    scaler = {
-        "X_mean": X_mean,
-        "X_std": X_std,
-        "y_mean": float(y_mean),
-        "y_std": float(y_std),
-    }
+    scaler = {"X_mean": X_mean, "X_std": X_std, "y_mean": float(y_mean), "y_std": float(y_std)}
 
     def slice_meta(idx):
-        return {
-            "doy": meta["doy"][idx],
-            "timestamp": meta["timestamp"][idx],
-            "house_id": meta["house_id"][idx],
-        }
+        return {"doy": meta["doy"][idx], "timestamp": meta["timestamp"][idx], "house_id": meta["house_id"][idx]}
 
     meta_train = slice_meta(train_idx)
     meta_val = slice_meta(val_idx)
@@ -281,22 +196,11 @@ def split_and_scale_sequences(X, y, meta, cfg):
     print("Val size  :", X_val.shape[0])
     print("Test size :", X_test.shape[0])
 
-    return (
-        (X_train_n, y_train_n, meta_train),
-        (X_val_n, y_val_n, meta_val),
-        (X_test_n, y_test_n, meta_test),
-        scaler,
-    )
+    return ((X_train_n, y_train_n, meta_train), (X_val_n, y_val_n, meta_val), (X_test_n, y_test_n, meta_test), scaler)
 
 
-# ----------------------------------------------------
 # Training loop with history and early stopping
-# ----------------------------------------------------
 def train_model(model, train_loader, val_loader, cfg, device):
-    """
-    Train the LSTM forecaster with early stopping.
-    Returns the best model and a loss history dict.
-    """
     tr_cfg = cfg["training"]
     lr = tr_cfg["lr"]
     weight_decay = float(tr_cfg["weight_decay"])
@@ -306,9 +210,7 @@ def train_model(model, train_loader, val_loader, cfg, device):
     verbose = tr_cfg["verbose"]
 
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=lr, weight_decay=weight_decay
-    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     best_val_loss = float("inf")
     best_state = None
@@ -319,7 +221,6 @@ def train_model(model, train_loader, val_loader, cfg, device):
     val_hist = []
 
     for epoch in range(1, n_epochs + 1):
-        # ----- training phase -----
         model.train()
         train_loss_sum = 0.0
         n_train = 0
@@ -340,7 +241,6 @@ def train_model(model, train_loader, val_loader, cfg, device):
 
         train_loss = train_loss_sum / max(n_train, 1)
 
-        # ----- validation phase -----
         model.eval()
         val_loss_sum = 0.0
         n_val = 0
@@ -361,11 +261,7 @@ def train_model(model, train_loader, val_loader, cfg, device):
         val_hist.append(val_loss)
 
         if verbose and (epoch % log_every == 0 or epoch == 1):
-            print(
-                f"Epoch {epoch:4d} | "
-                f"train_loss = {train_loss:.5f} | "
-                f"val_loss = {val_loss:.5f}"
-            )
+            print(f"Epoch {epoch:4d} | "f"train_loss = {train_loss:.5f} | "f"val_loss = {val_loss:.5f}")
 
         # early stopping
         if val_loss < best_val_loss:
@@ -376,30 +272,17 @@ def train_model(model, train_loader, val_loader, cfg, device):
             patience_counter += 1
             if patience_counter >= patience:
                 if verbose:
-                    print(
-                        f"Early stopping at epoch {epoch}, "
-                        f"best_val_loss = {best_val_loss:.5f}"
-                    )
+                    print(f"Early stopping at epoch {epoch}, "f"best_val_loss = {best_val_loss:.5f}")
                 break
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    history = {
-        "epoch": epoch_hist,
-        "train_loss": train_hist,
-        "val_loss": val_hist,
-    }
+    history = {"epoch": epoch_hist, "train_loss": train_hist, "val_loss": val_hist}
     return model, history
 
 
-# ----------------------------------------------------
-# Prediction helper
-# ----------------------------------------------------
 def predict(model, data_loader, device):
-    """
-    Run model on a DataLoader and return predictions as numpy array.
-    """
     model.eval()
     preds = []
     with torch.no_grad():
@@ -410,9 +293,6 @@ def predict(model, data_loader, device):
     return np.vstack(preds)  # (N, 1)
 
 
-# ----------------------------------------------------
-# Metrics
-# ----------------------------------------------------
 def mae(y_true, y_pred):
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
@@ -425,13 +305,10 @@ def mape(y_true, y_pred):
     mask = y_true != 0
     if not mask.any():
         return float("nan")
-    return float(
-        np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100.0
-    )
+    return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100.0)
 
 
 def r2_score_np(y_true, y_pred):
-    """Compute coefficient of determination R^2."""
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
     ss_res = np.sum((y_true - y_pred) ** 2)
@@ -441,9 +318,6 @@ def r2_score_np(y_true, y_pred):
     return 1.0 - ss_res / ss_tot
 
 
-# ----------------------------------------------------
-# Main pipeline
-# ----------------------------------------------------
 def main():
     set_seed(42)
     cfg = load_config()
@@ -451,7 +325,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
-    # ----- Load raw data -----
+    # load data
     data_path = cfg["general"]["load_file"]
     house_ids = cfg["environment"]["house_ids"]
     print("Houses:", house_ids)
@@ -460,10 +334,10 @@ def main():
     print("Raw data shape:", df.shape)
     print("Date range:", df["dt"].min(), "→", df["dt"].max())
 
-    # ----- Build sequences -----
+    # build sequences
     X, y, meta = build_lstm_sequences(df, cfg)
 
-    # ----- Train/val/test split + normalization -----
+    # train/val/test split + normalization
     (X_train, y_train, meta_train), \
     (X_val, y_val, meta_val), \
     (X_test, y_test, meta_test), \
@@ -475,36 +349,25 @@ def main():
     val_ds = SequenceDataset(X_val, y_val)
     test_ds = SequenceDataset(X_test, y_test)
 
-    train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True, drop_last=False
-    )
-    val_loader = DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False, drop_last=False
-    )
-    test_loader = DataLoader(
-        test_ds, batch_size=batch_size, shuffle=False, drop_last=False
-    )
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, drop_last=False)
+    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, drop_last=False)
 
-    # ----- Build LSTM model -----
+    # build LSTM model
     f_cfg = cfg["forecast"]
-    input_size = X_train.shape[2]    # number of features per time step (1: total load)
+    input_size = X_train.shape[2]    
     hidden_size = f_cfg["hidden_size"]
     num_layers = f_cfg["num_layers"]
     dropout = f_cfg["dropout"]
 
-    model = LSTMForecaster(
-        input_size=input_size,
-        hidden_size=hidden_size,
-        num_layers=num_layers,
-        dropout=dropout,
-    ).to(device)
+    model = LSTMForecaster(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, dropout=dropout).to(device)
 
     print(model)
 
-    # ----- Train model -----
+    # train model
     model, history = train_model(model, train_loader, val_loader, cfg, device)
 
-    # ----- Save loss curve -----
+    # save loss curve
     os.makedirs("results", exist_ok=True)
     plt.figure(figsize=(8, 4))
     plt.plot(history["epoch"], history["train_loss"], label="Train loss")
@@ -519,48 +382,31 @@ def main():
     plt.close()
     print("Saved loss curve to:", loss_png)
 
-    # ----- Predict on validation and test sets -----
+    # predict on validation and test sets
     y_val_pred_n = predict(model, val_loader, device)
     y_test_pred_n = predict(model, test_loader, device)
 
     y_mean = scaler["y_mean"]
     y_std = scaler["y_std"]
 
-    # Denormalize
+    # denormalize
     y_val_true = y_val * y_std + y_mean
     y_val_pred = y_val_pred_n * y_std + y_mean
 
     y_test_true = y_test * y_std + y_mean
     y_test_pred = y_test_pred_n * y_std + y_mean
 
-    # ==========================================
-    #  Build DataFrames for val and test (with house_id)
-    # ==========================================
-    df_val_results = pd.DataFrame({
-        "timestamp": meta_val["timestamp"],
-        "doy": meta_val["doy"],
-        "house_id": meta_val["house_id"],
-        "y_true": y_val_true.flatten(),
-        "y_pred": y_val_pred.flatten(),
-    })
+
+    df_val_results = pd.DataFrame({"timestamp": meta_val["timestamp"], "doy": meta_val["doy"], "house_id": meta_val["house_id"], "y_true": y_val_true.flatten(), "y_pred": y_val_pred.flatten()})
     val_results_csv = os.path.join("results", "lstm_val_results.csv")
     df_val_results.to_csv(val_results_csv, index=False)
     print("Saved validation predictions to:", val_results_csv)
 
-    df_test_results = pd.DataFrame({
-        "timestamp": meta_test["timestamp"],
-        "doy": meta_test["doy"],
-        "house_id": meta_test["house_id"],
-        "y_true": y_test_true.flatten(),
-        "y_pred": y_test_pred.flatten(),
-    })
+    df_test_results = pd.DataFrame({"timestamp": meta_test["timestamp"], "doy": meta_test["doy"], "house_id": meta_test["house_id"], "y_true": y_test_true.flatten(), "y_pred": y_test_pred.flatten()})
     test_results_csv = os.path.join("results", "lstm_test_results.csv")
     df_test_results.to_csv(test_results_csv, index=False)
     print("Saved test predictions to:", test_results_csv)
 
-    # ==========================================
-    #  Per-house metrics over full val_range
-    # ==========================================
     val_metrics_rows = []
 
     print("\nValidation metrics per house (LSTM, full val_range):")
@@ -573,12 +419,7 @@ def main():
         m_mape = mape(y_t, y_p)
         m_r2 = r2_score_np(y_t, y_p)
 
-        val_metrics_rows.append({
-            "house_id": hid,
-            "MAE_kW": m_mae,
-            "MAPE_percent": m_mape,
-            "R2": m_r2,
-        })
+        val_metrics_rows.append({"house_id": hid, "MAE_kW": m_mae,"MAPE_percent": m_mape, "R2": m_r2})
 
         print(f"House {hid}: MAE = {m_mae:.4f}, MAPE = {m_mape:.2f}%, R^2 = {m_r2:.4f}")
 
@@ -587,9 +428,6 @@ def main():
     val_metrics_df.to_csv(val_metrics_csv, index=False)
     print("Saved validation metrics per house to:", val_metrics_csv)
 
-    # ==========================================
-    #  Per-house metrics over full test_range
-    # ==========================================
     test_metrics_rows = []
 
     print("\nTest metrics per house (LSTM, full test_range):")
@@ -602,12 +440,7 @@ def main():
         m_mape = mape(y_t, y_p)
         m_r2 = r2_score_np(y_t, y_p)
 
-        test_metrics_rows.append({
-            "house_id": hid,
-            "MAE_kW": m_mae,
-            "MAPE_percent": m_mape,
-            "R2": m_r2,
-        })
+        test_metrics_rows.append({"house_id": hid, "MAE_kW": m_mae, "MAPE_percent": m_mape, "R2": m_r2})
 
         print(f"House {hid}: MAE = {m_mae:.4f}, MAPE = {m_mape:.2f}%, R^2 = {m_r2:.4f}")
 
@@ -616,23 +449,17 @@ def main():
     test_metrics_df.to_csv(test_metrics_csv, index=False)
     print("Saved test metrics per house to:", test_metrics_csv)
 
-    # ==========================================
-    #  Last week of July (subset of test)
-    # ==========================================
     start_last_week = pd.Timestamp("2018-07-25 00:00:00")
     end_last_week = pd.Timestamp("2018-08-01 00:00:00")
 
-    mask_last_week = (
-        (df_test_results["timestamp"] >= start_last_week)
-        & (df_test_results["timestamp"] < end_last_week)
-    )
+    mask_last_week = ((df_test_results["timestamp"] >= start_last_week) & (df_test_results["timestamp"] < end_last_week))
     df_last_week = df_test_results[mask_last_week].copy()
 
     out_csv_last = os.path.join("results", "lstm_last_week_july.csv")
     df_last_week.to_csv(out_csv_last, index=False)
     print("Saved last-week-of-July predictions to:", out_csv_last)
 
-    # Per-house metrics and plots for last week of July
+    # per-house metrics and plots for last week of July
     house_ids_unique = sorted(df_last_week["house_id"].unique())
     metrics_rows = []
 
