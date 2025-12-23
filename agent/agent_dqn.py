@@ -75,7 +75,7 @@ class DQNAgent:
         self.steps_done += 1
         
         if random.random() < self.epsilon:
-            return random.randint(0, self.action_dim - 1)  # Explore
+            return random.randint(0, self.action_dim - 1) # Explore
         
         with torch.no_grad():
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
