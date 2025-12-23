@@ -232,6 +232,7 @@ class DQNTrainer:
                 plt.close()
                 print(f"Figure 'Training Reward' plotted and saved successfully")
 
+            """""
             # Loss curve 
             if self.episode_losses:
                 plt.figure(figsize=(12, 8))
@@ -243,7 +244,9 @@ class DQNTrainer:
                 plt.savefig(os.path.join(self.results_dir, 'training_loss.png'), dpi=300, bbox_inches='tight')
                 plt.close()
                 print(f"Figure 'Training Loss' plotted and saved successfully")
-
+            """""
+        
+            """""
             # Q-values curve 
             if self.episode_q_values:
                 plt.figure(figsize=(12, 8))
@@ -255,6 +258,8 @@ class DQNTrainer:
                 plt.savefig(os.path.join(self.results_dir, 'q_values.png'), dpi=300, bbox_inches='tight')
                 plt.close()
                 print(f"Figure 'Q-values' plotted and saved successfully")
+
+            """""
 
             # Epsilon decay curve 
             if self.epsilon_history:
