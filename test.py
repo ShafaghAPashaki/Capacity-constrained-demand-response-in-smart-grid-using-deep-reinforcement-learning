@@ -9,18 +9,20 @@ from env import Environment
 from agent.agent_dqn import DQNAgent
 from utils.config_loader import load_config
 
-# Font settings for plots (same as main.py)
-plt.rcParams.update({'font.size': 24,'axes.labelsize': 24,'xtick.labelsize': 22, 
-                     'ytick.labelsize': 22,'legend.fontsize': 20,'legend.title_fontsize': 22})
-mpl.rcParams['hatch.linewidth'] = 3  # Make hatch lines thicker
+
+plt.rcParams.update({
+    'font.size': 20,
+    'axes.labelsize': 20,
+    'xtick.labelsize': 18,
+    'ytick.labelsize': 18,
+    'legend.fontsize': 16,
+    'legend.title_fontsize': 18,
+})
+mpl.rcParams['hatch.linewidth'] = 3  # hatch line width
 BIN_SIZE = 2
 
 
 class ModelTester:
-    """
-    Test and analyze trained DQN model
-    This class handles visualization and financial reporting for trained models
-    """
     def __init__(self, model_path, cfg_override=None):
         """Initialize ModelTester with trained model"""
         self.cfg = cfg_override or load_config()
@@ -32,7 +34,7 @@ class ModelTester:
         self.env = Environment(data_ids=house_ids, cfg_override=self.cfg)
         
         # Get state and action dimensions
-        state = self.env.reset(mode='train')
+        state = self.env.reset(mode='test')
         state_dim = len(state)
         action_dim = self.env.num_actions
         
@@ -60,13 +62,13 @@ class ModelTester:
         print(f"Model successfully loaded from: {model_path}")
 
 
-    def plot_day_profiles(self, baselines_per_house, reductions_per_house, incentives_per_house, prices, days, house_ids, rho):
-        """Plot daily energy profiles for individual houses"""
-        # Color definitions 
-        d_color = "#FFDD00"  # yellow for Demand
-        c_color = "#919291"  # green for Consumption
-        price_color = '#D62728'  # red for Wholesale Price
-        inc_color = '#1F77B4'  # blue for Incentive Rate
+    def plot_day_profiles(self, baselines_per_house, reductions_per_house, incentives_per_house,
+                        prices, device_after_per_house_dict, nonshift_dict, days, house_ids, rho):
+        # Colors (match reference)
+        d_color = "#FFDD00" # Demand (yellow)
+        c_color = "#919291" # Consumption (grey)
+        price_color = "#D62728"
+        inc_color = "#1F77B4"
 
         for day in days:
             B = baselines_per_house[day]
@@ -74,7 +76,6 @@ class ModelTester:
             I = incentives_per_house[day]
             P = prices[day]
 
-            # Mask incentives where no reduction occurred
             masked_I = I.copy()
             for j in range(masked_I.shape[1]):
                 masked_I[R[:, j] == 0, j] = 0.0
@@ -83,104 +84,261 @@ class ModelTester:
             xticks = np.arange(1, len(P) + 1, BIN_SIZE)
 
             for idx, hid in enumerate(house_ids):
-                original_load = B[:, idx]
-                consumption = original_load - R[:, idx]
+                original_load = B[:, idx]  # Demand (baseline)
+                # after = (sum devices after) + non-shiftable
+                A_ctrl = device_after_per_house_dict[day].sum(axis=2)  # (H, N)
+                NS = nonshift_dict[day] # (H, N)
+                consumption = A_ctrl[:, idx] + NS[:, idx]
 
                 fig, ax1 = plt.subplots(figsize=(10, 6))
 
-                # Plot demand and consumption areas
+                # Area: Demand + Consumption (hatch)
                 ax1.fill_between(hours, original_load, 0, color=d_color, alpha=0.7, label='Demand', zorder=1)
                 ax1.fill_between(hours, consumption, 0, color=c_color, alpha=0.2, label='_nolegend_', zorder=2)
-                ax1.fill_between(hours, consumption, 0, facecolor='none', edgecolor=c_color, hatch='/', linewidth=2, label='Consumption', zorder=3)
+                ax1.fill_between(hours, consumption, 0, facecolor='none', edgecolor=c_color,
+                                hatch='/', linewidth=2, label='Consumption', zorder=3)
 
-                # Plot demand and consumption lines
+                # Demand/Consumption
                 ax1.plot(hours, original_load, color=d_color, linewidth=2, zorder=4)
-                ax1.plot(hours, consumption, color=c_color, linewidth=1.5, zorder=4)
+                ax1.plot(hours, consumption,   color=c_color, linewidth=1.5, zorder=4)
 
                 ax1.set_xlabel('Hour')
                 ax1.set_ylabel('Energy (kWh)')
                 ax1.set_xticks(xticks)
                 ax1.set_xlim(1, len(P))
-                ax1.set_ylim(0, original_load.max() * 1.1)
+                ax1.set_ylim(0, max(1e-9, original_load.max()) * 1.1)
                 ax1.grid(False)
 
-                # Create secondary axis for prices and incentives
+                # Price & Incentive
                 ax2 = ax1.twinx()
-                ax2.plot(hours, P, marker='o', color=price_color, linewidth=3, markersize=6, label='Wholesale Price', zorder=5)
-                ax2.plot(hours, masked_I[:, idx], marker='s', color=inc_color, linewidth=3, markersize=6, label='Incentive Rate', zorder=5)  
+                ax2.plot(hours, P, marker='o', color=price_color, linewidth=3, markersize=6,
+                        label='Wholesale Price', zorder=5)
+                ax2.plot(hours, masked_I[:, idx], marker='s', color=inc_color,   linewidth=3, markersize=6,
+                        label='Incentive Rate',  zorder=5)
                 ax2.set_ylabel('Rate (¢/kWh)')
-                ax2.set_ylim(0, max(P.max(), masked_I[:, idx].max()) * 1.2)
+                ax2.set_ylim(0, max(P.max(), masked_I[:, idx].max(), 1e-9) * 1.2)
 
-                # Combine legends from both axes
+                # Combined legend   
                 h1, l1 = ax1.get_legend_handles_labels()
                 h2, l2 = ax2.get_legend_handles_labels()
                 ax1.legend(h1 + h2, l1 + l2, loc='upper left', framealpha=0.9)
 
                 plt.tight_layout()
-
-                # Save individual house profile
-                filename = os.path.join(self.results_dir, f'energy_profile_house_{hid}_day_{day}_rho{rho}.png')
-                plt.savefig(filename, dpi=300)
+                out = os.path.join(self.results_dir, f'energy_profile_house_{hid}_day_{day}_rho{rho}.png')
+                plt.savefig(out, dpi=300)
                 plt.close(fig)
-                
-        print(f"Daily profiles plotted for {len(days)} days")
 
 
-    def plot_aggregated_load(self, baselines_per_house, reductions_per_house, day, rho, output_path=None):
-        """Plot aggregated load curve for a specific day"""
-        B = baselines_per_house[day]
-        R = reductions_per_house[day]
-        agg_baseline = B.sum(axis=1)
-        agg_consumption = agg_baseline - R.sum(axis=1)
+    def plot_aggregated_load(self, baselines_per_house, after_total_dict, day, rho, output_path=None):
+        agg_baseline = baselines_per_house[day].sum(axis=1)   # (H,)
+        agg_after = after_total_dict[day].sum(axis=1) # (H,)
+
         hours = np.arange(1, len(agg_baseline) + 1)
         xticks = np.arange(1, len(agg_baseline) + 1, BIN_SIZE)
-
-        target_level = 8.5  # Capacity threshold
+        target_level = 7  # kWh
 
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.plot(hours, agg_baseline, marker='o', color='red', linewidth=2, markersize=6, label='Aggregated Original Load')
-        ax.plot(hours, agg_consumption, marker='o', color='blue', linestyle='--', linewidth=2, markersize=6, label='Aggregated Load After Reduction')
-        ax.hlines(target_level, xmin=hours.min(), xmax=hours.max(), colors='green', linestyles='--', linewidth=2, label=f'Capacity Threshold ({target_level} kW)')
+        ax.plot(hours, agg_after, marker='o', color='blue', linestyle='--', linewidth=2, markersize=6,
+                label='Aggregated Load After Reduction')
+        ax.hlines(target_level, xmin=hours.min(), xmax=hours.max(), colors='green', linestyles='--', linewidth=2,
+                label=f'Capacity Threshold ({target_level} kW)')
+
         ax.set_xlabel('Hour')
-        ax.set_ylabel('Power (kW)')
+        ax.set_ylabel('Aggregated load (kW)')
         ax.set_xticks(xticks)
         ax.set_xlim(1, len(agg_baseline))
-        ax.set_ylim(0, max(agg_baseline) * 1.1)
+        ax.set_ylim(0, max(agg_baseline.max(), 1e-9) * 1.1)
         ax.grid(False)
         ax.legend(loc='upper right')
         plt.tight_layout()
 
-        if output_path:
-            filename = output_path
-        else:
-            filename = os.path.join(self.results_dir, f'aggregated_load_day_{day}_rho{rho}.png')
+        filename = output_path or os.path.join(self.results_dir, f'aggregated_load_day_{day}_rho{rho}.png')
         plt.savefig(filename, dpi=300)
         plt.close()
-        
         print(f"Aggregated load plot saved: {filename}")
 
 
+    def plot_devices_house_split(
+        self,
+        device_baselines_per_house_dict, # (H, N, D) = self.env.device_before
+        device_reductions_per_house_dict, # (H, N, D) = max(before - after, 0)
+        device_after_per_house_dict, # (H, N, D) = self.env.device_after
+        day,
+        house_ids,
+        device_names=None
+    ):
+        
+        if day not in device_baselines_per_house_dict:
+            print(f"[WARN] day {day} not found in device_baselines_per_house_dict")
+            return
+
+        B = device_baselines_per_house_dict[day] # (H, N, D)
+        A = device_after_per_house_dict[day]
+        R = device_reductions_per_house_dict.get(day, None)
+        if R is None:
+            R = np.zeros_like(B)
+
+        H, N, D = B.shape
+        hours = np.arange(1, H + 1)
+        xticks = np.arange(1, H + 1, BIN_SIZE)
+
+        if device_names is None and hasattr(self.env, "DEVICES"):
+            device_names = [str(n).lower() for n in self.env.DEVICES]
+        elif device_names is None:
+            device_names = [f"dev{d}" for d in range(D)]
+        else:
+            device_names = [str(n).lower() for n in device_names]
+
+        for hid in house_ids:
+            try:
+                idx = list(self.env.data_ids).index(hid)
+            except ValueError:
+                print(f"[WARN] house_id {hid} not found in env.data_ids; skip.")
+                continue
+
+            base_hd = B[:, idx, :] # (H, D)
+            after_hd = A[:, idx, :]
+            red_hd  = R[:, idx, :] # (H, D)
+
+            for d in range(D):
+                name = device_names[d] if d < len(device_names) else f"dev{d}"
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(hours, base_hd[:, d], color='#D62728', linestyle='-',  linewidth=2.4, label=f'{name} (baseline)', zorder=2)
+                ax.plot(hours, after_hd[:, d], color='#1F77B4', linestyle='--', linewidth=3.0, label=f'{name} (after)',     zorder=3)
+
+                ax.set_xlabel('Hour')
+                ax.set_ylabel('Energy (kWh)')
+                ax.set_xticks(xticks)
+                ax.set_xlim(1, H)
+
+                ymax = max(base_hd[:, d].max(), after_hd[:, d].max(), 1e-9)
+                ax.set_ylim(0, ymax * 1.15)
+                ax.grid(False)
+                ax.legend(loc='upper left', fontsize=12, framealpha=0.9)
+                ax.set_title(f'{name} – House {hid} – Day {day}')
+
+                plt.tight_layout()
+                outpath = os.path.join(self.results_dir, f'device_{name}_house_{hid}_day_{day}.png')
+                plt.savefig(outpath, dpi=300)
+                plt.close()
+                print(f"Saved: {outpath}")
+
+
+    def plot_total_incentive_rate(self, incentives_dict, day):
+        I = incentives_dict[day] # shape: (H, N), ¢/kWh
+        H, _ = I.shape
+        hours = np.arange(1, H + 1)
+        xticks = np.arange(1, H + 1, BIN_SIZE)
+
+        sum_rate = I.sum(axis=1) #(¢/kWh)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(hours, sum_rate, linewidth=3)
+        ax.set_xlabel("Hour")
+        ax.set_ylabel("Incentives (¢/kWh)")
+        ax.set_xticks(xticks)
+        ax.set_xlim(1, H)
+        ax.grid(False)
+        plt.tight_layout()
+
+        out = os.path.join(self.results_dir, f"total_incentive_rate_day_{day}.png")
+        plt.savefig(out, dpi=300)
+        plt.close()
+        print(f"Saved: {out}")
+
+
+    def plot_total_incentive_per_house(self, incentives_dict, reductions_dict, day, house_ids):
+        if day not in incentives_dict:
+            print(f"[WARN] day {day} not found in incentives_dict.")
+            return
+        if day not in reductions_dict:
+            print(f"[WARN] day {day} not found in reductions_dict.")
+            return
+
+        # incentives: (H, N) in ¢/kWh
+        I = incentives_dict[day]
+        # reductions: (H, N) in kWh
+        R = reductions_dict[day]
+
+        # Total payout per EU in cent: sum_h lambda * ΔE
+        total_payout = (I * R).sum(axis=0) # (N,), ¢
+        # Total reduction per EU in kWh: sum_h ΔE
+        total_reduction = R.sum(axis=0) # (N,), kWh
+
+        x = np.arange(len(house_ids))
+        width = 0.35
+
+        fig, ax_left = plt.subplots(figsize=(10, 5))
+        ax_right = ax_left.twinx()
+
+        # Blue bars: total payout (left axis)
+        bars_payout = ax_left.bar(
+            x - width/2,
+            total_payout,
+            width=width,
+            label='Total payout (¢)'
+        )
+
+        # Orange bars: total reduction (right axis)
+        bars_reduction = ax_right.bar(
+            x + width/2,
+            total_reduction,
+            width=width,
+            label='Total reduction (kWh)',
+            color='darkorange'
+        )
+
+        # X-ticks as End User 1, 2, 3
+        ax_left.set_xticks(x)
+        ax_left.set_xticklabels([f'End User {i+1}' for i in range(len(house_ids))])
+        ax_left.set_xlabel('End users')
+
+        # Y labels
+        ax_left.set_ylabel('Total payout (¢)')
+        ax_right.set_ylabel('Total reduction (kWh)')
+
+        # No title
+        # ax_left.set_title(...)
+
+        # Combined legend
+        handles = [bars_payout, bars_reduction]
+        labels = [h.get_label() for h in handles]
+        ax_left.legend(handles, labels, loc='upper left')
+
+        ax_left.grid(False)
+        fig.tight_layout()
+
+        out = os.path.join(self.results_dir, f'total_payout_and_reduction_per_house_day_{day}.png')
+        plt.savefig(out, dpi=300)
+        plt.close()
+        print(f"Saved: {out}")
+
+
     def test_plots(self):
-        """Generate test plots for specified test days. This runs the trained model on test data and creates visualizations"""
         rho = self.cfg['environment']['rho']
         house_ids = self.cfg['environment']['house_ids']
         
         # Get test days from config
-        tr = self.cfg['training']
-        start_day, end_day = map(int, tr['test_range'])   
-        test_days = list(range(start_day, end_day + 1))
-        july_days = [d for d in test_days if 204 <= d <= 210]  
+        target_day = 208
+        july_days = [target_day]
+        print(f"Generating aggregated-load plot only for day {target_day}")
 
         print(f"Generating test plots for {len(july_days)} days: {july_days}")
 
         baselines_dict, reductions_dict, incentives_dict, prices_dict = {}, {}, {}, {}
+        nonshift_dict, after_total_dict = {}, {}
+        device_baselines_per_house_dict, device_reductions_per_house_dict = {}, {}
+        device_after_per_house_dict = {} # (H, N, D_ctrl)
 
-        # Generate data for test days using the trained model
         for day in july_days:
-            state = self.env.reset(day)
-            done = False
             hourly_baselines, hourly_reductions, hourly_incentives, hourly_prices = [], [], [], []
+            hourly_device_baselines, hourly_device_reductions = [], []
+            hourly_device_baselines_per_house, hourly_device_reductions_per_house = [], []
+            hourly_device_after_per_house = []
 
+            state = self.env.reset(day=day, mode='test')
+            done = False
             while not done:
                 state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
                 with torch.no_grad():
@@ -189,34 +347,92 @@ class ModelTester:
 
                 h = self.env.curr_step - 1
                 if h >= 0:
-                    hourly_baselines.append(self.env.baseline_per_house[h].copy())
-                    hourly_reductions.append(self.env.reductions[h].copy())
+                    true_baseline = self.env.baseline_per_house[h].copy() #(N,)
+                    after_house = self.env.device_after[h].sum(axis=1) if hasattr(self.env, "device_after") else (true_baseline - self.env.reductions[h])
+                    red_house = np.maximum(true_baseline - after_house, 0.0)
+                    hourly_baselines.append(true_baseline)
+                    hourly_reductions.append(red_house)
                     hourly_incentives.append(self.env.incentives[h].copy())
                     hourly_prices.append(self.env.prices[h])
+                    hourly_device_baselines.append(self.env.device_after_agg[h].copy())
+                    hourly_device_reductions.append(self.env.reductions_by_device[h].copy())
+                    hourly_device_baselines_per_house.append(self.env.device_before[h].copy())
+                    hourly_device_reductions_per_house.append(np.maximum(self.env.device_before[h] - self.env.device_after[h], 0.0))
+                    hourly_device_after_per_house.append(self.env.device_after[h].copy())
 
                 state = next_state
 
-            # Store collected data
-            baselines_dict[day] = np.array(hourly_baselines)
-            reductions_dict[day] = np.array(hourly_reductions)
-            incentives_dict[day] = np.array(hourly_incentives)
-            prices_dict[day] = np.array(hourly_prices)
+            baselines_dict[day] = self.env.baseline_per_house.copy() # (H, N)
+            # Build reductions per house (H, N) robustly:
+            if hasattr(self.env, "delta_E"):
+                 reductions_dict[day] = self.env.delta_E.copy()
+            elif hasattr(self.env, "before_total_per_house") and hasattr(self.env, "after_total_per_house"):
+                 reductions_dict[day] = np.maximum(
+                     self.env.before_total_per_house - self.env.after_total_per_house, 0.0)
+            else:
+                 # Fallback from device-level and non-shiftable (shouldn’t be needed if env is patched)
+                 B_ctrl = self.env.device_before.sum(axis=2) # (H, N)
+                 A_ctrl = self.env.device_after.sum(axis=2) # (H, N)
+                 if hasattr(self.env, "nonshift_baseline_per_house"):
+                     NS = self.env.nonshift_baseline_per_house
+                 else:
+                     NS = np.zeros_like(B_ctrl)
+                 before_total = B_ctrl + NS
+                 after_total = A_ctrl + NS
+                 reductions_dict[day] = np.maximum(before_total - after_total, 0.0)
+            prices_dict[day] = self.env.prices.copy() # (H,)
+            incentives_dict[day] = self.env.incentives.copy() # (H, N)
+            device_after_per_house_dict[day] = self.env.device_after.copy() # (H, N, D_ctrl)
+            nonshift_dict[day] = self.env.nonshift_baseline_per_house.copy()  # (H, N)
+            after_total_dict[day] = self.env.after_total_per_house.copy() # (H, N)
+            device_baselines_per_house_dict[day] = self.env.device_before.copy() # (H, N, D)
+            device_reductions_per_house_dict[day] = np.maximum(self.env.device_before - self.env.device_after, 0.0)   
 
-            # Plot aggregated load for each day
-            self.plot_aggregated_load(baselines_dict, reductions_dict, day, rho)
-
+            self.plot_aggregated_load(
+             baselines_per_house=baselines_dict,
+             after_total_dict=after_total_dict,
+             day=day, rho=rho
+         )
         # Plot daily profiles for a specific target day
         target_day = 208
         if target_day in july_days:
-            self.plot_day_profiles(baselines_dict, reductions_dict, incentives_dict, prices_dict, 
-                                 days=[target_day], house_ids=house_ids, rho=rho)
-            print(f"Detailed daily profiles created for day {target_day}")
-        
+            self.plot_day_profiles(
+                baselines_dict,
+                reductions_dict,
+                incentives_dict,
+                prices_dict,
+                device_after_per_house_dict,  
+                nonshift_dict,                 
+                days=[target_day],
+                house_ids=house_ids,
+                rho=rho
+            )
+            self.plot_aggregated_load(
+                baselines_per_house=baselines_dict,
+                after_total_dict=after_total_dict,
+                day=day, rho=rho
+            )
+            self.plot_devices_house_split(
+                device_baselines_per_house_dict,
+                device_reductions_per_house_dict,
+                device_after_per_house_dict,   
+                day=target_day,
+                house_ids=house_ids,
+                device_names=getattr(self.env, "DEVICES", None)
+            )
+            self.plot_total_incentive_rate(incentives_dict, day=target_day)
+            self.plot_total_incentive_per_house(
+                incentives_dict,
+                reductions_dict,
+                day=target_day,
+                house_ids=house_ids
+            )
+            
+
         print("All test plots generated successfully")
 
-    def financial_report(self):
-        """Generate and save financial report ONLY for day 208."""
 
+    def financial_report(self):
         rho = self.cfg['environment']['rho']
         house_ids = self.cfg['environment']['house_ids']
 
@@ -227,15 +443,18 @@ class ModelTester:
         # Collect simulation data
         days, hours, N = len(july_days), self.env.max_steps, len(house_ids)
 
-        R_j = np.zeros((days * hours, N), dtype=float)   # reductions kWh
-        L_j = np.zeros((days * hours, N), dtype=float)   # incentives ¢/kWh
-        B_j = np.zeros((days * hours, N), dtype=float)   # baselines kWh
-        P_h = np.zeros((days * hours, 1), dtype=float)   # prices ¢/kWh
+        # Buffers per hour
+        R_j = np.zeros((days * hours, N), dtype=float)  # delta_E (kWh)
+        L_j = np.zeros((days * hours, N), dtype=float)  # incentives (¢/kWh)
+        B_j = np.zeros((days * hours, N), dtype=float)  # baseline per house (kWh)
+        P_h = np.zeros((days * hours, 1), dtype=float)  # price (¢/kWh)
+        D_j = np.zeros((days * hours, N), dtype=float)  # discomfort per house (cent-equivalent)
+        A_j = np.zeros((days * hours, N), dtype=float)  # AFTER consumption per house (kWh) 
 
         valid_rows = 0
 
-        for di, day in enumerate(july_days):  # only 208
-            state = self.env.reset(day)
+        for di, day in enumerate(july_days):  
+            state = self.env.reset(day=day, mode='test')
             for h in range(hours):
                 idx = di * hours + h
 
@@ -246,71 +465,120 @@ class ModelTester:
 
                 next_state, _, done, _ = self.env.step(action)
 
-                # Collect hour-level arrays
-                R_j[idx] = self.env.reductions[h] # kWh
+                # Pull hour-level arrays from env buffers (NO recomputation)
+                R_j[idx] = self.env.delta_E[h] # kWh
                 L_j[idx] = self.env.incentives[h] # ¢/kWh
                 B_j[idx] = self.env.baseline_per_house[h] # kWh
                 P_h[idx] = self.env.prices[h] # ¢/kWh
+                D_j[idx] = self.env.discomforts[h] # cent-equivalent (PC + TS)
+                A_j[idx] = self.env.after_total_per_house[h].copy()  # (controllable + nonshift)
 
                 valid_rows += 1
                 state = next_state
                 if done:
                     break
 
-        # Use only valid rows
-        R_valid = R_j[:valid_rows]
-        L_valid = L_j[:valid_rows]
-        B_valid = B_j[:valid_rows]
-        P_valid = P_h[:valid_rows]
+        # Trim to valid rows
+        R_valid = R_j[:valid_rows]  # (H, N)
+        L_valid = L_j[:valid_rows]  # (H, N)
+        B_valid = B_j[:valid_rows]  # (H, N)
+        P_valid = P_h[:valid_rows]  # (H, 1)
+        D_valid = D_j[:valid_rows]  # (H, N)
+        A_valid = A_j[:valid_rows]  # (H, N) 
 
-        sp_revenue_direct = float((P_valid * R_valid).sum()) # cent
+        # SP revenue from GO (¢): price * total reduction
+        sp_revenue_direct = float((P_valid * R_valid).sum())  # ¢
 
-        # Financial metrics (all in cent)
-        mu_array = np.array(self.env.mu) # ¢/kWh^2 (per-customer)
-        omega = self.env.omega # ¢/kWh (scalar or per-customer; here assumed scalar)
+        # Per-house payout: sum_h λ_{h,i} * ΔE_{h,i}
+        income_raw = (L_valid * R_valid).sum(axis=0) # ¢ per house 
 
-        income_vec = (L_valid * R_valid).sum(axis=0) # cent per CU
-        dis_cost_vec = (0.5 * mu_array * (R_valid ** 2) + omega * R_valid).sum(axis=0) # cent per CU
+        # Raw discomfort: sum over hours of recorded discomfort 
+        dis_raw = D_valid.sum(axis=0)
 
-        sp_revenue = float(sp_revenue_direct) # cent
-        sp_payment = float(income_vec.sum()) # cent
-        sp_profit  = float(sp_revenue - sp_payment) # cent
+        # Effective values 
+        income_vec = rho * income_raw            
+        dis_cost_vec = (1.0 - rho) * dis_raw       
 
-        # Customer metrics table
+        sp_revenue = float(sp_revenue_direct) # ¢
+        sp_payment = float(income_vec.sum()) # ¢
+        sp_profit = float(sp_revenue - sp_payment) # ¢
+        load_no_dr = B_valid.sum(axis=1) # kWh per hour (aggregated baseline)
+        load_dr = A_valid.sum(axis=1) # kWh per hour (aggregated after DR)
+
+        par_data = {
+            'day': target_day,
+            'Peak_load_no_DR_kWh': float(load_no_dr.max()),
+            'Peak_load_DR_kWh': float(load_dr.max()),
+            'Mean_load_no_DR_kWh': float(load_no_dr.mean()),
+            'Mean_load_DR_kWh': float(load_dr.mean()),
+            'PAR_no_DR': float(load_no_dr.max() / max(load_no_dr.mean(), 1e-9)),
+            'PAR_DR': float(load_dr.max() / max(load_dr.mean(), 1e-9)),
+        }
+
         customer_metrics = []
         for i, hid in enumerate(house_ids):
-            total_red_i = float(R_valid[:, i].sum()) # kWh
+            total_red_i = float(R_valid[:, i].sum())  # kWh
             avg_inc_i = float(L_valid[:, i].mean()) # ¢/kWh
-            income_i = float(income_vec[i]) # cent
-            dis_i = float(dis_cost_vec[i]) # cent
-            customer_metrics.append({'day': target_day, 'CUID': f'CU{hid}',
-                'mu_cents_per_kWh2': float(mu_array[i]), 'omega_cents_per_kWh': float(omega),
-                'Avg_inc_¢_per_kWh': avg_inc_i, 'Total_red_kWh': total_red_i,
-                'Inc_income_cents': income_i, 'Dis_cost_cents': dis_i,
-                'Profit_cents': income_i - dis_i})
+            income_i = float(income_vec[i]) # ¢
+            dis_i = float(dis_cost_vec[i]) # ¢
+            customer_metrics.append({
+                'day': target_day,
+                'CUID': f'CU{hid}',
+                'Avg_inc_¢_per_kWh': avg_inc_i,
+                'Total_red_kWh': total_red_i,
+                'Inc_income_cents': income_i,
+                'Discomfort_cents': dis_i,
+                'Profit_cents': income_i - dis_i
+            })
 
-        # Service provider metrics
-        sp_data = {'day': target_day, 'SP_revenue_from_GO_cents': sp_revenue,
-                    'SP_payment_to_CU_cents': sp_payment, 'SP_profit_cents': sp_profit}
+        sp_data = {
+            'day': target_day,
+            'SP_revenue_from_GO_cents': sp_revenue,
+            'SP_payment_to_CU_cents': sp_payment,
+            'SP_profit_cents': sp_profit
+        }
 
-        # PAR-like metrics on hourly energy series 
-        load_no_dr = B_valid.sum(axis=1) # kWh per hour (aggregated)
-        load_dr = (B_valid - R_valid).sum(axis=1)
-        par_data = {'day': target_day, 'Peak_load_no_DR_kWh': float(load_no_dr.max()),
-            'Peak_load_DR_kWh': float(load_dr.max()), 'Mean_load_no_DR_kWh': float(load_no_dr.mean()),
-            'Mean_load_DR_kWh': float(load_dr.mean()), 'PAR_no_DR': float(load_no_dr.max() / max(load_no_dr.mean(), 1e-9)),
-            'PAR_DR': float(load_dr.max() / max(load_dr.mean(), 1e-9)),}
+        total_B = B_valid.sum()
+        total_A = A_valid.sum()
+        total_R = R_valid.sum()
 
-        # Ensure output dir exists
+        #print(f"[INFO] total baseline kWh : {total_B:.3f}")
+        #print(f"[INFO] total after kWh : {total_A:.3f}")
+        #print(f"[INFO] real reduction kWh : {total_B - total_A:.3f}")
+        #print(f"[INFO] sum(delta_E) kWh : {total_R:.3f}")
+
+        if (R_valid < -1e-9).any():
+            print("[WARN] Negative delta_E found.")
+        if (A_valid < -1e-9).any():
+            print("[WARN] Negative AFTER load found.")
+
+        cost_hourly = (L_valid * R_valid).sum(axis=1)
+
+        cap = float(self.env.capacity_threshold)
+        over = np.where(A_valid.sum(axis=1) - cap > 1e-6)[0]
+        if len(over) > 0:
+            print(f"[NOTE] {len(over)} hour(s) exceed capacity after DR (soft check).")
+
         os.makedirs(self.results_dir, exist_ok=True)
-
-        # Save to Excel (fallback to CSV if openpyxl missing)
         excel_path = os.path.join(self.results_dir, f'financial_report_day{target_day}_rho{rho}.xlsx')
         try:
             with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
                 pd.DataFrame(customer_metrics).to_excel(writer, sheet_name='Customer_Metrics', index=False)
                 pd.DataFrame([sp_data]).to_excel(writer, sheet_name='Service_Provider', index=False)
                 pd.DataFrame([par_data]).to_excel(writer, sheet_name='PAR_Metrics', index=False)
+
+                df_hourly = pd.DataFrame({
+                    'hour': np.arange(valid_rows),
+                    'price_c_per_kWh': P_valid.squeeze(),
+                    'baseline_total_kWh': load_no_dr,
+                    'after_total_kWh': load_dr,
+                    'reduction_total_kWh': R_valid.sum(axis=1),
+                    'cost_cents': cost_hourly,
+                    'revenue_cents': (P_valid.squeeze() * R_valid.sum(axis=1)),
+                    'profit_cents': (P_valid.squeeze() * R_valid.sum(axis=1)) - cost_hourly
+                })
+                df_hourly.to_excel(writer, sheet_name='Hourly_Audit', index=False)
+
             print(f"Financial report saved to: {excel_path}")
         except Exception as e:
             print(f"[warn] {e}. Saving CSVs instead.")
@@ -321,15 +589,12 @@ class ModelTester:
 
 
     def run_complete_analysis(self):
-        """Run complete analysis pipeline. Generates all test plots and financial reports"""
         print("=" * 60)
         print("Starting Complete Model Analysis")
         print("=" * 60)
         
-        # Generate test plots
         self.test_plots()
         
-        # Generate financial report
         self.financial_report()
         
         print("=" * 60)
