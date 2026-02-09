@@ -1,3 +1,4 @@
-*A Deep Reinforcement Learning Approach to Incentive-Based Demand Response for Smart Grid*
+## Overview
+This project presents a deep reinforcement learning approach to incentive-based demand response in smart grids.
 
-The agent file is named dqn, but it actually implements the DDQN algorithm.
+**Note:** The agent file is named `dqn`, but it actually implements the **Double Deep Q-Network (DDQN)** algorithm.
